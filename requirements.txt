@@ -1,0 +1,191 @@
+# Alfred — A Voice-Controlled AI Assistant
+
+> A self-hosted, butler-themed AI assistant with a cloud LLM backend, a native desktop app, and a mobile web interface. Speak to it, and it controls your PC, manages your calendar and email, tracks your spending, transcribes meetings, and runs autonomous research tasks — all for **$0/month** on free-tier infrastructure.
+
+<!-- Optional badges — swap in your own once the repo is live
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+-->
+
+---
+
+## What it does
+
+Alfred is a personal AI assistant inspired by Batman's butler. You activate it with the wake word **"Alfred"** (or `Ctrl+Space`) and speak naturally. It responds in a British butler persona through high-quality neural text-to-speech, and can take real actions across your machine and online accounts.
+
+It spans **three coordinated surfaces:**
+
+| Surface | Platform | Role |
+|---|---|---|
+| **Server** | FastAPI on Oracle Cloud (free tier) | LLM inference, speech-to-text, text-to-speech, long-term memory |
+| **Desktop app** | Windows (customtkinter + animated orb UI) | Wake-word listening, PC control, screen vision, 20+ feature modules |
+| **Web app** | Any phone/browser | Quick voice access with browser-native speech APIs |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph Clients
+        D["🖥️ Desktop App<br/>(Windows, customtkinter)<br/>wake word · holographic orb · hotkey"]
+        W["📱 Web App<br/>(phone / browser)<br/>Web Speech API"]
+    end
+
+    subgraph Server["☁️ FastAPI Server — Oracle Cloud (free tier)"]
+        API["REST API<br/>(Bearer-token auth)"]
+        STT["Whisper STT<br/>(speech → text)"]
+        TTS["Piper TTS<br/>(text → speech)"]
+        MEM[("ChromaDB<br/>long-term memory")]
+        ROUTER{"Tool / intent<br/>router"}
+    end
+
+    subgraph LLM["Language Models"]
+        GROQ["Groq API<br/>llama-3.3-70b<br/>(primary)"]
+        OLLAMA["Ollama<br/>qwen2.5:7b<br/>(local fallback)"]
+    end
+
+    subgraph Integrations["Feature Modules"]
+        PC["PC control · screen vision"]
+        PROD["Email · Calendar · Finance"]
+        MEDIA["Spotify · Meeting transcription"]
+        AGENT["Autonomous research agent"]
+    end
+
+    D -->|voice / text| API
+    W -->|voice / text| API
+    API --> STT
+    API --> TTS
+    API --> ROUTER
+    ROUTER --> GROQ
+    GROQ -.fallback.-> OLLAMA
+    ROUTER --> MEM
+    D --> Integrations
+    ROUTER --> Integrations
+```
+
+**Design highlights**
+
+- **Hybrid LLM with graceful degradation** — Groq's hosted Llama 3.3 70B is the primary engine for speed; a local Ollama model takes over automatically if the API is unavailable, so the assistant never goes fully offline.
+- **Stateful long-term memory** — facts, schedules, and past conversations are embedded and stored in ChromaDB, then retrieved as context on later requests.
+- **Token-authenticated API** — every client authenticates with a Bearer token; all secrets are injected via environment variables (see [Configuration](#configuration)).
+- **Modular feature system** — each capability (email, finance, vision, etc.) is an independent module with its own intent detection, making the assistant easy to extend.
+
+---
+
+## Features
+
+<details>
+<summary><b>🎙️ Voice & conversation</b></summary>
+
+- Wake-word activation ("Alfred") and global hotkey
+- Neural TTS: ElevenLabs (premium) with a local Kokoro voice fallback
+- Whisper speech-to-text on the server
+- Butler persona with an opt-in "deep conversation" mode
+</details>
+
+<details>
+<summary><b>🖥️ PC control & screen vision</b></summary>
+
+- Launch/close apps, set volume, lock screen, take screenshots
+- "What's on my screen?" — vision-language description of the active window
+- Click UI elements and scroll by voice
+</details>
+
+<details>
+<summary><b>📅 Productivity</b></summary>
+
+- **Email** — read, search, and send via Gmail (IMAP)
+- **Calendar** — view and create Google Calendar events
+- **Finance** — log expenses, set budgets, track a stock watchlist
+- **Reminders & routines** — five scheduled daily routines (morning briefing, work start, etc.)
+- **Documents** — summarize PDFs and Word docs
+- **Meetings** — record, transcribe, and summarize
+</details>
+
+<details>
+<summary><b>🤖 Autonomous agent & dev tools</b></summary>
+
+- Multi-step research agent ("research the latest in AI", "write a report on X")
+- Code assistant — write, explain, debug, and run Python
+- System monitor, security scan, clipboard history, custom voice "protocols"
+</details>
+
+---
+
+## Tech stack
+
+**Backend:** Python · FastAPI · Groq (Llama 3.3 70B) · Ollama · Whisper · Piper TTS · ChromaDB
+**Desktop:** customtkinter · Pillow · SpeechRecognition · ElevenLabs/Kokoro TTS · pynput · psutil
+**Integrations:** Google Calendar API · Gmail IMAP · Spotify (spotipy) · DuckDuckGo search
+**Infra:** Oracle Cloud free tier · systemd service · all free-tier APIs (**$0/month**)
+
+---
+
+## Configuration
+
+All secrets are read from environment variables — **nothing sensitive is committed to this repo.**
+
+1. Copy the template and fill in your own values:
+   ```bash
+   cp .env.example .env
+   ```
+2. Required keys are documented in [`.env.example`](.env.example): a shared `ALFRED_AUTH_TOKEN`, the `ALFRED_SERVER_URL`, your `GROQ_API_KEY`, and optional Email/TTS credentials.
+
+---
+
+## Quick start
+
+### Server (Linux / cloud VM)
+```bash
+git clone https://github.com/YOUR_USERNAME/alfred-ai-assistant.git
+cd alfred-ai-assistant
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # then edit .env with your values
+uvicorn chief_server:app --host 0.0.0.0 --port 8000
+```
+The web interface is then served at `http://YOUR_SERVER_HOST:8000`.
+
+### Desktop app (Windows)
+```powershell
+pip install -r requirements.txt
+# set ALFRED_SERVER_URL and ALFRED_AUTH_TOKEN to match your server, then:
+python chief_desktop.py
+```
+
+---
+
+## Project layout
+
+```
+alfred-ai-assistant/
+├── chief_server.py        # FastAPI backend: chat, STT/TTS, memory, auth
+├── chief_desktop.py       # Windows desktop app + animated orb UI
+├── memory.py              # ChromaDB long-term memory
+├── tools.py               # Web search, datetime, calculator tools
+├── agent.py               # Autonomous multi-step task agent
+├── pc_control.py          # App/volume/screenshot control
+├── pc_vision.py           # Vision-language screen understanding
+├── email_manager.py       # Gmail read/search/send
+├── calendar_manager.py    # Google Calendar
+├── finance.py             # Expenses, budgets, stock watchlist
+├── meeting_recorder.py    # Record / transcribe / summarize
+├── ...                    # ~15 more feature modules
+└── static/index.html      # Mobile web interface
+```
+
+---
+
+## Notes & roadmap
+
+This started as a personal project and is shared here to demonstrate full-stack and systems design. Possible next steps:
+
+- Move the client-side web token to a proper session-based auth flow
+- Add automated tests and CI
+- Containerize the server with Docker for reproducible deploys
+
+---
+
+*Built with Python. Licensed under [MIT](LICENSE).*
